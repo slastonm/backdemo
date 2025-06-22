@@ -2,31 +2,33 @@ const fs = require("fs");
 const readline = require("readline");
 const path = require("path");
 
-async function analyzeLargeFile(filename = "large-text.txt") {
-  const filePath = path.join(__dirname, "..", "data", filename);
-  const stream = fs.createReadStream(filePath);
+async function analyzeLargeFile(filePath) {
+  const absolutePath = path.resolve(__dirname, "../", filePath);
 
-  const rl = readline.createInterface({
-    input: stream,
-    crlfDelay: Infinity,
+  return new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(absolutePath, { encoding: "utf8" });
+
+    let lineCount = 0;
+    let wordCount = 0;
+    let charCount = 0;
+
+    const rl = readline.createInterface({
+      input: stream,
+      crlfDelay: Infinity,
+    });
+
+    rl.on("line", (line) => {
+      lineCount++;
+      wordCount += line.trim().split(/\s+/).filter(Boolean).length;
+      charCount += line.length;
+    });
+
+    rl.on("error", reject);
+
+    rl.on("close", () => {
+      resolve({ lineCount, wordCount, charCount });
+    });
   });
-
-  const results = [];
-  let lineCount = 0;
-  let totalWords = 0;
-
-  for await (const line of rl) {
-    const wordCount = line.split(/\W+/).filter(Boolean).length;
-    results.push({ line: lineCount + 1, words: wordCount });
-    totalWords += wordCount;
-    lineCount++;
-  }
-
-  return {
-    lines: lineCount,
-    totalWords,
-    results: results.slice(0, 10), // only preview
-  };
 }
 
-module.exports = analyzeLargeFile;
+module.exports = { analyzeLargeFile };
