@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const { memoize } = require("../utils/memorizer");
 const { generateFakePosts } = require("../utils/generator");
 const { asyncMap, asyncMapCallback } = require("../utils/asyncArray");
+const { log } = require("../utils/logger");
 
 const memoizedPostGenerator = memoize(
   ({ offset, limit }) => {
@@ -76,25 +77,70 @@ router.get("/analyze", (req, res) => {
   });
 });
 
-router.post("/add", verifyToken, (req, res) => {
-  const { content, file } = req.body;
-  if (!file || !content) {
-    return res.status(400).json({ error: "Missing fields" });
-  }
-  const newPost = {
-    id: currentId++,
-    content,
-    file: file,
-    author: req.user.email,
-    createdAt: new Date(),
-  };
+// Клас для керування постами з логуванням
+class PostManager {
+  @log({
+    level: "INFO",
+    logTo: "file", // або "console", "external"
+    filename: "posts.log",
+    profile: true,
+    structured: true,
+  })
+  addPost(content, file, userEmail) {
+    if (!file || !content) {
+      throw new Error("Missing fields");
+    }
 
-  try {
+    const newPost = {
+      id: currentId++,
+      content,
+      file: file,
+      author: userEmail,
+      createdAt: new Date(),
+    };
+
     mockPosts.push(newPost);
     console.log(newPost);
+    return newPost;
+  }
+
+  @log({
+    level: "INFO",
+    logTo: "file",
+    filename: "posts.log",
+    profile: true,
+    structured: true,
+  })
+  deletePost(postId, userEmail) {
+    const index = mockPosts.findIndex((p) => p.id === postId);
+
+    if (index === -1) {
+      throw new Error("Post not found");
+    }
+
+    if (mockPosts[index].author !== userEmail) {
+      throw new Error("Forbidden");
+    }
+
+    const deleted = mockPosts.splice(index, 1)[0];
+    return deleted;
+  }
+}
+
+const postManager = new PostManager();
+
+router.post("/add", verifyToken, (req, res) => {
+  const { content, file } = req.body;
+
+  try {
+    const newPost = postManager.addPost(content, file, req.user.email);
     res.json(newPost);
   } catch (err) {
     console.error("Post creation error:", err);
+    if (err.message === "Missing fields") {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -113,12 +159,20 @@ router.put("/edit/:id", verifyToken, (req, res) => {
 
 router.delete("/delete/:id", verifyToken, (req, res) => {
   const postId = parseInt(req.params.id);
-  const index = mockPosts.findIndex((p) => p.id === postId);
-  if (index === -1) return res.status(404).send("post not found");
-  if (mockPosts[index].author !== req.user.email)
-    return res.status(403).send("Forbidden");
-  const deleted = mockPosts.splice(index, 1)[0];
-  res.json(deleted);
+
+  try {
+    const deleted = postManager.deletePost(postId, req.user.email);
+    res.json(deleted);
+  } catch (err) {
+    console.error("Post deletion error:", err);
+    if (err.message === "Post not found") {
+      return res.status(404).send("post not found");
+    }
+    if (err.message === "Forbidden") {
+      return res.status(403).send("Forbidden");
+    }
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 module.exports = router;

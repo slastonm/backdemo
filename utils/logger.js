@@ -3,18 +3,29 @@ const path = require("path");
 
 function log({
   level = "INFO",
-  logTo = "console", // "console" | "file"
+  logTo = "console", // "console" | "file" | "external"
   filename = "log.txt",
   condition = () => true,
   structured = false,
   profile = false,
   formatter = null,
+  externalService = null, // function for external logging
 } = {}) {
-  const levels = ["DEBUG", "INFO", "ERROR"];
-  const shouldLog = (lvl) => levels.indexOf(lvl) >= levels.indexOf(level);
+  const levels = { DEBUG: 0, INFO: 1, ERROR: 2 };
+  const shouldLog = (lvl) => levels[lvl] >= levels[level];
 
-  const logEntry = (entry) => {
+  const ensureLogDir = () => {
+    if (logTo === "file") {
+      const logDir = path.join(__dirname, "..", "logs");
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+    }
+  };
+
+  const logEntry = async (entry) => {
     if (!shouldLog(entry.level) || !condition(entry.level, entry)) return;
+
     const timestamp = new Date().toISOString();
     const base = {
       timestamp,
@@ -22,21 +33,44 @@ function log({
       function: entry.function,
       arguments: entry.args,
       result: entry.result,
-      duration: entry.duration,
+      ...(entry.duration !== undefined && { duration: `${entry.duration}ms` }),
+      ...(entry.error && { error: entry.error }),
     };
+
     const formatted = formatter
       ? formatter(base)
       : structured
-      ? JSON.stringify(base)
-      : `\${timestamp} [\${entry.level}] \${entry.function} - args: \${JSON.stringify(entry.args)} result: \${JSON.stringify(entry.result)}`;
+      ? JSON.stringify(base, null, 2)
+      : `${timestamp} [${entry.level}] ${
+          entry.function
+        } - args: ${JSON.stringify(entry.args)} result: ${JSON.stringify(
+          entry.result
+        )}${entry.duration ? ` (${entry.duration}ms)` : ""}`;
 
-    if (logTo === "file") {
-      fs.appendFileSync(
-        path.join(__dirname, "..", "logs", filename),
-        formatted + "\n"
-      );
-    } else {
-      console.log(formatted);
+    switch (logTo) {
+      case "file":
+        ensureLogDir();
+        fs.appendFileSync(
+          path.join(__dirname, "..", "logs", filename),
+          formatted + "\n"
+        );
+        break;
+      case "external":
+        if (externalService && typeof externalService === "function") {
+          try {
+            await externalService(base);
+          } catch (err) {
+            console.error("service failed:", err.message);
+
+            console.log(formatted);
+          }
+        } else {
+          console.warn("service not configured, falling back to console");
+          console.log(formatted);
+        }
+        break;
+      default:
+        console.log(formatted);
     }
   };
 
@@ -45,22 +79,36 @@ function log({
     const isAsync = original.constructor.name === "AsyncFunction";
 
     descriptor.value = function (...args) {
-      const start = Date.now();
+      const start = profile ? Date.now() : null;
+
       try {
         const result = original.apply(this, args);
+
         if (isAsync) {
-          return result.then((res) => {
-            if (shouldLog(level)) {
-              logEntry({
-                level,
+          return result
+            .then(async (res) => {
+              if (shouldLog(level)) {
+                await logEntry({
+                  level,
+                  function: key,
+                  args,
+                  result: res,
+                  duration: start ? Date.now() - start : undefined,
+                });
+              }
+              return res;
+            })
+            .catch(async (error) => {
+              await logEntry({
+                level: "ERROR",
                 function: key,
                 args,
-                result: res,
-                duration: profile ? Date.now() - start : undefined,
+                result: null,
+                error: error.message,
+                duration: start ? Date.now() - start : undefined,
               });
-            }
-            return res;
-          });
+              throw error;
+            });
         } else {
           if (shouldLog(level)) {
             logEntry({
@@ -68,7 +116,7 @@ function log({
               function: key,
               args,
               result,
-              duration: profile ? Date.now() - start : undefined,
+              duration: start ? Date.now() - start : undefined,
             });
           }
           return result;
@@ -78,7 +126,9 @@ function log({
           level: "ERROR",
           function: key,
           args,
-          result: error.message,
+          result: null,
+          error: error.message,
+          duration: start ? Date.now() - start : undefined,
         });
         throw error;
       }
