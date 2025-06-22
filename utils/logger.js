@@ -1,70 +1,91 @@
 const fs = require("fs");
-const util = require("util");
+const path = require("path");
 
 function log({
   level = "INFO",
-  logTo = "file",
+  logTo = "console", // "console" | "file"
   filename = "log.txt",
   condition = () => true,
-  structured = true,
+  structured = false,
   profile = false,
   formatter = null,
 } = {}) {
   const levels = ["DEBUG", "INFO", "ERROR"];
+  const shouldLog = (lvl) => levels.indexOf(lvl) >= levels.indexOf(level);
 
-  return function (target, key, descriptor) {
-    // const originalFn = descriptor.value; error
-    // const isAsync = originalFn.constructor.name === 'AsyncFunction';
-    // descriptor.value = function (...args) {
-    //   const start = Date.now();
-    //   const timestamp = new Date().toISOString();
-    //   const logEntry = (type, data) => {
-    //     if (!levels.includes(level) || !condition(type, data)) return;
-    //     const base = {
-    //       timestamp,
-    //       level: type,
-    //       function: key,
-    //       arguments: args,
-    //       ...data,
-    //     };
-    //     const logLine = formatter
-    //       ? formatter(base)
-    //       : structured
-    //       ? JSON.stringify(base)
-    //       : `[${timestamp}] [${type}] ${key}(${args.map(a => util.inspect(a)).join(', ')}) => ${data.result}`;
-    //     if (logTo === 'console') {
-    //       console.log(logLine);
-    //     } else if (logTo === 'file') {
-    //       fs.appendFileSync(filename, logLine + '\n');
-    //     } else if (typeof logTo === 'function') {
-    //       logTo(base);
-    //     }
-    //   };
-    //   const handleResult = (result) => {
-    //     const duration = Date.now() - start;
-    //     if (level !== 'ERROR') {
-    //       logEntry(level, { result, duration });
-    //     }
-    //     return result;
-    //   };
-    //   const handleError = (error) => {
-    //     const duration = Date.now() - start;
-    //     logEntry('ERROR', { error: error.message, stack: error.stack, duration });
-    //     throw error;
-    //   };
-    //   try {
-    //     const result = originalFn.apply(this, args);
-    //     return isAsync
-    //       ? result.then(handleResult).catch(handleError)
-    //       : handleResult(result);
-    //   } catch (err) {
-    //     return handleError(err);
-    //   }
-    // };
-    // return descriptor;
+  const logEntry = (entry) => {
+    if (!shouldLog(entry.level) || !condition(entry.level, entry)) return;
+    const timestamp = new Date().toISOString();
+    const base = {
+      timestamp,
+      level: entry.level,
+      function: entry.function,
+      arguments: entry.args,
+      result: entry.result,
+      duration: entry.duration,
+    };
+    const formatted = formatter
+      ? formatter(base)
+      : structured
+      ? JSON.stringify(base)
+      : `\${timestamp} [\${entry.level}] \${entry.function} - args: \${JSON.stringify(entry.args)} result: \${JSON.stringify(entry.result)}`;
+
+    if (logTo === "file") {
+      fs.appendFileSync(
+        path.join(__dirname, "..", "logs", filename),
+        formatted + "\n"
+      );
+    } else {
+      console.log(formatted);
+    }
   };
 
-  // end
+  return function (target, key, descriptor) {
+    const original = descriptor.value;
+    const isAsync = original.constructor.name === "AsyncFunction";
+
+    descriptor.value = function (...args) {
+      const start = Date.now();
+      try {
+        const result = original.apply(this, args);
+        if (isAsync) {
+          return result.then((res) => {
+            if (shouldLog(level)) {
+              logEntry({
+                level,
+                function: key,
+                args,
+                result: res,
+                duration: profile ? Date.now() - start : undefined,
+              });
+            }
+            return res;
+          });
+        } else {
+          if (shouldLog(level)) {
+            logEntry({
+              level,
+              function: key,
+              args,
+              result,
+              duration: profile ? Date.now() - start : undefined,
+            });
+          }
+          return result;
+        }
+      } catch (error) {
+        logEntry({
+          level: "ERROR",
+          function: key,
+          args,
+          result: error.message,
+        });
+        throw error;
+      }
+    };
+
+    return descriptor;
+  };
 }
 
 module.exports = { log };

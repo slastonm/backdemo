@@ -1,5 +1,4 @@
 const express = require("express");
-// const mongoose = require('mongoose');
 const cors = require("cors");
 require("dotenv").config();
 
@@ -11,6 +10,13 @@ app.use(express.json());
 app.use("/auth", require("./routes/auth"));
 // app.use(require("./routes/gacha"));
 app.use("/forum", require("./routes/forum"));
+app.use("/generator", require("./routes/event"));
+app.use("/priority", require("./routes/priority"));
+app.use("/analyze", require("./routes/analyze-page"));
+const proxyRouter = require("./routes/proxy");
+const proxyAuthMiddleware = require("./middleware/auth-proxy");
+
+app.use("/proxy", proxyAuthMiddleware, proxyRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
@@ -19,11 +25,3 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`Server runnig on http://localhost:${PORT}`);
 });
-
-// mongoose
-//   .connect("mongodb://localhost:27017/my_database")
-//   .then(() => {
-//     console.log("MongoDB connected");
-//     app.listen(5000, () => console.log("Server running on port 5000"));
-//   })
-//   .catch((err) => console.error(err));

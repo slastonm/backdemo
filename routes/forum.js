@@ -1,9 +1,31 @@
 const router = require("express").Router();
-//const ForumPost = require('../models/ForumPost');
-//const forumEvents = require('../utils/forumEvents');
-//const { memoize } = require('../utils/memorizer');
-//const { log } = require('../utils/logger');
 const jwt = require("jsonwebtoken");
+const { memoize } = require("../utils/memorizer");
+const { generateFakePosts } = require("../utils/generator");
+const { asyncMap, asyncMapCallback } = require("../utils/asyncArray");
+
+const memoizedPostGenerator = memoize(
+  ({ offset, limit }) => {
+    const total = offset + limit;
+    const generated = generateFakePosts(total, mockPosts);
+    return generated.slice(offset, offset + limit);
+  },
+  {
+    maxSize: 20,
+    evictionPolicy: "LRU",
+    maxAge: 1000 * 60 * 2,
+  }
+);
+
+// /forum/slice-generated?offset=10&limit=5
+
+router.get("/slice-generated", (req, res) => {
+  const offset = parseInt(req.query.offset) || 0;
+  const limit = parseInt(req.query.limit) || 5;
+
+  const posts = memoizedPostGenerator({ offset, limit });
+  res.json({ offset, limit, posts });
+});
 
 let mockPosts = [];
 let currentId = 1;
@@ -21,8 +43,36 @@ function verifyToken(req, res, next) {
   }
 }
 
-router.get("/all", verifyToken, (req, res) => {
-  res.json(mockPosts);
+router.get("/all", async (req, res) => {
+  const enrichedPosts = await asyncMap(mockPosts, async (post) => {
+    await new Promise((r) => setTimeout(r, 100)); // імітація async
+    return { ...post, enriched: true };
+  });
+
+  res.json(enrichedPosts);
+});
+
+// Асинхронна обробка кожного поста
+function analyzePost(post, callback) {
+  setTimeout(() => {
+    const wordCount = post.content.split(" ").length;
+    const hasFile = !!post.file;
+    callback(null, {
+      ...post,
+      wordCount,
+      hasFile,
+      analyzed: true,
+    });
+  }, 100);
+}
+
+router.get("/analyze", (req, res) => {
+  asyncMapCallback(mockPosts, analyzePost, (err, analyzedPosts) => {
+    if (err) {
+      return res.status(500).json({ error: "Failed to analyze posts" });
+    }
+    res.json({ total: analyzedPosts.length, posts: analyzedPosts });
+  });
 });
 
 router.post("/add", verifyToken, (req, res) => {
@@ -69,82 +119,5 @@ router.delete("/delete/:id", verifyToken, (req, res) => {
   const deleted = mockPosts.splice(index, 1)[0];
   res.json(deleted);
 });
-
-// const createForumPost = log({
-//  level: 'INFO',
-//  profile: true,
-// })(async function createForumPost(username, content) {
-//  const newPost = new ForumPost({ username, content });
-//  const saved = await newPost.save();
-
-//  forumEvents.emit('post:created', saved);
-//  return saved;
-// });
-
-// const getAllForumPosts = log({
-//  level: 'INFO',
-//  profile: true,
-//})(async function getAllForumPosts() {
-//  return await ForumPost.find().sort({ createdAt: -1 }).lean();
-//});
-
-// const getPopularPosts = async () => {
-//   return await ForumPost.find().sort({ views: -1 }).limit(10).lean();
-// };
-
-// const memoizedPopular = memoize(getPopularPosts, {
-//   maxSize: 1,
-//   evictionPolicy: "LRU",
-//   maxAge: 1000 * 60 * 60 * 24 * 90,
-// });
-
-// router.post("/add", async (req, res) => {
-//   const { username, content } = req.body;
-//   if (!username || !content) {
-//     return res.status(400).json({ error: "Missing fields" });
-//   }
-
-//   try {
-//     const savedPost = await createForumPost(username, content);
-//     res.status(201).json(savedPost);
-//   } catch (err) {
-//     console.error("Post creation error:", err);
-//     res.status(500).json({ error: "Failed to create post" });
-//   }
-// });
-
-// router.get("/all", async (req, res) => {
-//   try {
-//     const posts = await getAllForumPosts();
-//     res.json(posts);
-//   } catch (err) {
-//     console.error("Error fetching forum posts:", err);
-//     res.status(500).json({ error: "Failed to fetch posts" });
-//   }
-// });
-
-// router.get("/popular", async (req, res) => {
-//   try {
-//     const result = await memoizedPopular();
-//     res.json(result);
-//   } catch (err) {
-//     console.error("Error fetching popular posts:", err);
-//     res.status(500).json({ error: "Failed to fetch popular posts" });
-//   }
-// });
-
-// router.get("/random", async (req, res) => {
-//   const limit = parseInt(req.query.limit) || 10;
-
-//   try {
-//     const randomPosts = await ForumPost.aggregate([
-//       { $sample: { size: limit } },
-//     ]);
-//     res.json(randomPosts);
-//   } catch (err) {
-//     console.error("Error fetching random posts", err);
-//     res.status(500).json({ error: "Failed to fetch random posts" });
-//   }
-// });
 
 module.exports = router;

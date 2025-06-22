@@ -1,3 +1,20 @@
+function generateFakePosts(n = 5, base = []) {
+  const posts = [...base];
+  const startId = posts.length + 1;
+
+  for (let i = 0; i < n; i++) {
+    posts.push({
+      id: startId + i,
+      author: `user${Math.floor(Math.random() * 100)}`,
+      content: `Generated post #${startId + i}`,
+      createdAt: new Date().toISOString(),
+      priority: Math.floor(Math.random() * 10 + 1),
+    });
+  }
+
+  return posts;
+}
+
 function* roundRobinGenerator(items) {
   let index = 0;
   while (true) {
@@ -11,25 +28,35 @@ async function consumeIteratorWithTimeout(iterator, timeoutSeconds) {
   const start = Date.now();
 
   for await (const value of iterator) {
-    console.log('Value:', value);
+    console.log("Value:", value);
 
-    if (typeof value === 'number') {
-      consumeIteratorWithTimeout.sum = (consumeIteratorWithTimeout.sum || 0) + value;
-      consumeIteratorWithTimeout.count = (consumeIteratorWithTimeout.count || 0) + 1;
-      console.log('Sum:', consumeIteratorWithTimeout.sum);
-      console.log('Average:', (consumeIteratorWithTimeout.sum / consumeIteratorWithTimeout.count).toFixed(2));
+    if (typeof value === "number") {
+      consumeIteratorWithTimeout.sum =
+        (consumeIteratorWithTimeout.sum || 0) + value;
+      consumeIteratorWithTimeout.count =
+        (consumeIteratorWithTimeout.count || 0) + 1;
+      console.log("Sum:", consumeIteratorWithTimeout.sum);
+      console.log(
+        "Average:",
+        (
+          consumeIteratorWithTimeout.sum / consumeIteratorWithTimeout.count
+        ).toFixed(2)
+      );
     }
 
     if (Date.now() - start > timeoutMs) {
-      console.log(`Timeout ${timeoutSeconds}s reached. Stop consuming iterator.`);
+      console.log(
+        `Timeout ${timeoutSeconds}s reached. Stop consuming iterator.`
+      );
       break;
     }
 
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 500));
   }
 }
 
 module.exports = {
   roundRobinGenerator,
   consumeIteratorWithTimeout,
+  generateFakePosts,
 };
