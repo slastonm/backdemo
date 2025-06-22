@@ -1,15 +1,27 @@
-function asyncMap(array, asyncFn) {
-  return Promise.all(array.map(asyncFn));
+function asyncMap(array, asyncFn, options = {}) {
+  const { signal } = options;
+  return Promise.all(
+    array.map(async (item, index) => {
+      if (signal?.aborted) {
+        throw new Error("Operation was aborted");
+      }
+      return await asyncFn(item, index);
+    })
+  );
 }
 
-// Callback-based версія
 function asyncMapCallback(array, asyncFn, finalCallback) {
   let result = [];
   let completed = 0;
   let hasError = false;
 
+  if (array.length === 0) {
+    finalCallback(null, []);
+    return;
+  }
+
   array.forEach((item, index) => {
-    asyncFn(item, (err, data) => {
+    asyncFn(item, index, (err, data) => {
       if (hasError) return;
       if (err) {
         hasError = true;
@@ -25,4 +37,26 @@ function asyncMapCallback(array, asyncFn, finalCallback) {
   });
 }
 
-module.exports = { asyncMap, asyncMapCallback };
+function asyncMapAbortable(array, asyncFn, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("aborted"));
+      return;
+    }
+
+    const abortHandler = () => reject(new Error("aborted"));
+    signal?.addEventListener("abort", abortHandler);
+
+    asyncMap(array, asyncFn, { signal })
+      .then((result) => {
+        signal?.removeEventListener("abort", abortHandler);
+        resolve(result);
+      })
+      .catch((error) => {
+        signal?.removeEventListener("abort", abortHandler);
+        reject(error);
+      });
+  });
+}
+
+module.exports = { asyncMap, asyncMapCallback, asyncMapAbortable };
