@@ -79,51 +79,55 @@ router.get("/analyze", (req, res) => {
 
 // Клас для керування постами з логуванням
 class PostManager {
-  @log({
-    level: "INFO",
-    logTo: "file", // або "console", "external"
-    filename: "posts.log",
-    profile: true,
-    structured: true,
-  })
   addPost(content, file, userEmail) {
-    if (!file || !content) {
-      throw new Error("Missing fields");
-    }
+    // Обгортаємо метод логуванням
+    return log({
+      level: "INFO",
+      logTo: "file", // або "console", "external"
+      filename: "posts.log",
+      profile: true,
+      structured: true,
+    })(() => {
+      if (!file || !content) {
+        throw new Error("Missing fields");
+      }
 
-    const newPost = {
-      id: currentId++,
-      content,
-      file: file,
-      author: userEmail,
-      createdAt: new Date(),
-    };
+      const newPost = {
+        id: currentId++,
+        content,
+        file: file,
+        author: userEmail,
+        createdAt: new Date(),
+      };
 
-    mockPosts.push(newPost);
-    console.log(newPost);
-    return newPost;
+      mockPosts.push(newPost);
+      console.log(newPost);
+      return newPost;
+    })();
   }
 
-  @log({
-    level: "INFO",
-    logTo: "file",
-    filename: "posts.log",
-    profile: true,
-    structured: true,
-  })
   deletePost(postId, userEmail) {
-    const index = mockPosts.findIndex((p) => p.id === postId);
+    // Обгортаємо метод логуванням
+    return log({
+      level: "INFO",
+      logTo: "file",
+      filename: "posts.log",
+      profile: true,
+      structured: true,
+    })(() => {
+      const index = mockPosts.findIndex((p) => p.id === postId);
 
-    if (index === -1) {
-      throw new Error("Post not found");
-    }
+      if (index === -1) {
+        throw new Error("Post not found");
+      }
 
-    if (mockPosts[index].author !== userEmail) {
-      throw new Error("Forbidden");
-    }
+      if (mockPosts[index].author !== userEmail) {
+        throw new Error("Forbidden");
+      }
 
-    const deleted = mockPosts.splice(index, 1)[0];
-    return deleted;
+      const deleted = mockPosts.splice(index, 1)[0];
+      return deleted;
+    })();
   }
 }
 
