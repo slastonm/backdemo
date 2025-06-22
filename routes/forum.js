@@ -12,19 +12,20 @@ const memoizedPostGenerator = memoize(
   },
   {
     maxSize: 20,
-    evictionPolicy: "LRU",
     maxAge: 1000 * 60 * 2,
+    evictionPolicy: "LRU",
+    cleanupInterval: 1000 * 30,
   }
 );
 
-// /forum/slice-generated?offset=10&limit=5
-
+// API: /forum/slice-generated?offset=10&limit=5
 router.get("/slice-generated", (req, res) => {
   const offset = parseInt(req.query.offset) || 0;
   const limit = parseInt(req.query.limit) || 5;
-
   const posts = memoizedPostGenerator({ offset, limit });
-  res.json({ offset, limit, posts });
+  const stats = memoizedPostGenerator.cache.stats();
+
+  res.json({ offset, limit, posts, cache: stats });
 });
 
 let mockPosts = [];
